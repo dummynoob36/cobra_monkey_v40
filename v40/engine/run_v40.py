@@ -78,6 +78,53 @@ def _load_close_price(ticker: str, signal_date: date):
         px = float(row["close"].iloc[0])
 
     return f"{px:.1f}"   # devolver con 1 decimal
+    
+    
+def compute_pattern_performance(df_dataset):
+    """
+    Devuelve un dict con el rendimiento por patrón:
+    { pattern: (ret_sin_repetir, ret_con_repetir) }
+    """
+    results = {}
+    today = df_dataset["signal_date"].max().date()
+
+    for pattern in df_dataset["pattern_family"].unique():
+        df_pat = df_dataset[df_dataset["pattern_family"] == pattern]
+
+        if df_pat.empty:
+            results[pattern] = (0.0, 0.0)
+            continue
+
+        # --- rendimiento sin repetir (por ticker único)
+        perf_unique = []
+        for ticker in df_pat["ticker"].unique():
+            row0 = df_pat[df_pat["ticker"] == ticker].iloc[0]
+            signal_date = row0["signal_date"].date()
+            price_signal = _load_close_price(ticker, signal_date)
+            price_now = _load_close_price(ticker, today)
+
+            if price_signal != "N/A" and price_now != "N/A":
+                perf_unique.append((float(price_now) / float(price_signal)) - 1)
+
+        ret_unique = round(sum(perf_unique) / len(perf_unique), 4) if perf_unique else 0.0
+
+        # --- rendimiento reinvirtiendo en todas las señales
+        perf_repeat = []
+        for _, row in df_pat.iterrows():
+            ticker = row["ticker"]
+            signal_date = row["signal_date"].date()
+            price_signal = _load_close_price(ticker, signal_date)
+            price_now = _load_close_price(ticker, today)
+
+            if price_signal != "N/A" and price_now != "N/A":
+                perf_repeat.append((float(price_now) / float(price_signal)) - 1)
+
+        ret_repeat = round(sum(perf_repeat) / len(perf_repeat), 4) if perf_repeat else 0.0
+
+        results[pattern] = (ret_unique * 100, ret_repeat * 100)
+
+    return results
+
 
 
 def build_simple_signal_summary(df_base: pd.DataFrame, ref_date: date) -> str:
@@ -86,20 +133,16 @@ def build_simple_signal_summary(df_base: pd.DataFrame, ref_date: date) -> str:
     if df_day.empty:
         return f"📊 Señales Cobra v4.0 ({ref_date})\nSin señales hoy."
 
-    # ---------------------------
-    # 1) Agrupar por patrón
-    # ---------------------------
+    # obtener métricas de rendimiento
+    perf = compute_pattern_performance(df_base)
+
     grouped = {}
     for _, row in df_day.iterrows():
-        fam = row["pattern_family"]
-        grouped.setdefault(fam, []).append(row["ticker"])
+        pat = row["pattern_family"]
+        grouped.setdefault(pat, []).append(row["ticker"])
 
-    # ---------------------------
-    # 2) Construir mensaje
-    # ---------------------------
     lines = [f"📊 Señales Cobra v4.0 ({ref_date})", ""]
 
-    # Orden amigable de patrones
     pattern_order = [
         "A", "B", "D", "E",
         "A_B", "B_D", "B_E", "A_B_D", "B_D_E"
@@ -110,15 +153,16 @@ def build_simple_signal_summary(df_base: pd.DataFrame, ref_date: date) -> str:
             continue
 
         pat_name = PATTERN_NAMES.get(pat, pat)
-        tickers = grouped[pat]
+        ret_u, ret_r = perf.get(pat, (0.0, 0.0))
+        ret_txt = f" ({ret_u:.2f}% | {ret_r:.2f}%)"
 
-        # Título del patrón
-        lines.append(f"{pat_name} ({pat})")
-        for ticker in tickers:
+        lines.append(f"{pat_name} ({pat}){ret_txt}")
+
+        for ticker in grouped[pat]:
             px = _load_close_price(ticker, ref_date)
             lines.append(f"• {ticker} @ {px}")
 
-        lines.append("")  # salto visual entre grupos
+        lines.append("")
 
     return "\n".join(lines).strip()
 
