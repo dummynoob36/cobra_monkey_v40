@@ -15,6 +15,7 @@ jobs:
     timeout-minutes: 25
 
     steps:
+
       # ---------------------------------------------
       # 1. Checkout del repositorio
       # ---------------------------------------------
@@ -49,17 +50,7 @@ jobs:
           export PYTHONPATH="$(pwd):$PYTHONPATH"
           echo "PYTHONPATH DESPUÉS: $PYTHONPATH"
 
-          python - <<EOF
-from v40.engine.run_v40 import run_v40
-print("=== Ejecutando Cobra v4.0 ===")
-try:
-    run_v40(no_telegram=False)
-    print("=== Cobra v4.0 terminó correctamente ===")
-except Exception as e:
-    print("=== ERROR CRÍTICO EN COBRA V4.0 ===")
-    print(e)
-    raise
-EOF
+          python -m v40.engine.run_v40
 
       # ---------------------------------------------
       # 5. Guardar artifacts
