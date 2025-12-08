@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 env/
 *.log
+v40/data/dataset_v40.csv
 outputs/daily_prices/
 outputs/logs/
 .vscode/
