@@ -1,0 +1,78 @@
+name: Cobra v4.0 — Daily Engine
+
+on:
+  schedule:
+    # Lunes–Viernes a las 21:30 UTC (22:30 España)
+    - cron: "30 21 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cobra_v40:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      # ---------------------------------------------
+      # 1. Checkout del repositorio
+      # ---------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ---------------------------------------------
+      # 2. Preparar Python 3.12
+      # ---------------------------------------------
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # ---------------------------------------------
+      # 3. Instalar dependencias
+      # ---------------------------------------------
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # ---------------------------------------------
+      # 4. Ejecutar Cobra v4.0
+      # ---------------------------------------------
+      - name: Run Cobra v4.0 Engine
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          echo "PYTHONPATH antes: $PYTHONPATH"
+          export PYTHONPATH="$(pwd):$PYTHONPATH"
+          echo "PYTHONPATH después: $PYTHONPATH"
+
+          # Ejecución con control de errores explícito
+          python - << 'EOF'
+from v40.engine.run_v40 import run_v40
+print("=== Ejecutando Cobra v4.0 ===")
+try:
+    run_v40(no_telegram=False)
+    print("=== Cobra v4.0 terminó correctamente ===")
+except Exception as e:
+    print("=== ERROR CRÍTICO EN COBRA V4.0 ===")
+    print(e)
+    raise
+EOF
+
+      # ---------------------------------------------
+      # 5. Guardar artifacts
+      # ---------------------------------------------
+      - name: Save Cobra artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cobra_v40_artifacts
+          path: |
+            outputs/logs/
+            outputs/daily_prices/
+            v40/data/dataset_v40.csv
+          retention-days: 7
+

@@ -1,0 +1,12 @@
+*.pyc
+__pycache__/
+.venv/
+env/
+*.log
+outputs/daily_prices/
+outputs/logs/
+.vscode/
+.idea/
+.DS_Store
+*.ipynb_checkpoints
+
