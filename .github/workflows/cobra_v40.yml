@@ -1,4 +1,4 @@
-name: Cobra v4.0 — Daily Engine
+name: "Cobra v4.0 — Daily Engine"
 
 on:
   schedule:
@@ -45,12 +45,11 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID:   ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          echo "PYTHONPATH antes: $PYTHONPATH"
+          echo "PYTHONPATH ANTES: $PYTHONPATH"
           export PYTHONPATH="$(pwd):$PYTHONPATH"
-          echo "PYTHONPATH después: $PYTHONPATH"
+          echo "PYTHONPATH DESPUÉS: $PYTHONPATH"
 
-          # Ejecución con control de errores explícito
-          python - << 'EOF'
+          python - <<EOF
 from v40.engine.run_v40 import run_v40
 print("=== Ejecutando Cobra v4.0 ===")
 try:
