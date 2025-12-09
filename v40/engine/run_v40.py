@@ -125,6 +125,30 @@ def compute_pattern_performance(df_dataset):
 
     return results
 
+def compute_pattern_sample_sizes(df_base: pd.DataFrame) -> dict:
+    """
+    Devuelve para cada patrón:
+    - n_unique: número de tickers distintos que dieron señal
+    - n_total: número total de señales (incluye duplicados)
+    """
+    result = {}
+    patterns = df_base["pattern_family"].unique()
+
+    for pat in patterns:
+        df_p = df_base[df_base["pattern_family"] == pat]
+
+        # tickers únicos (sin repetir)
+        n_unique = df_p["ticker"].nunique()
+
+        # señales totales (cada fila es una señal)
+        n_total = len(df_p)
+
+        result[pat] = (n_unique, n_total)
+
+    return result
+
+
+
 
 
 def build_simple_signal_summary(df_base: pd.DataFrame, ref_date: date) -> str:
@@ -135,6 +159,9 @@ def build_simple_signal_summary(df_base: pd.DataFrame, ref_date: date) -> str:
 
     # obtener métricas de rendimiento
     perf = compute_pattern_performance(df_base)
+
+    # nuevo: obtener tamaños de muestra
+    sample_sizes = compute_pattern_sample_sizes(df_base)
 
     grouped = {}
     for _, row in df_day.iterrows():
@@ -153,11 +180,20 @@ def build_simple_signal_summary(df_base: pd.DataFrame, ref_date: date) -> str:
             continue
 
         pat_name = PATTERN_NAMES.get(pat, pat)
+
+        # rendimiento
         ret_u, ret_r = perf.get(pat, (0.0, 0.0))
+
+        # tamaños de muestra
+        n_unique, n_total = sample_sizes.get(pat, (0, 0))
+
         ret_txt = f" ({ret_u:.2f}% | {ret_r:.2f}%)"
+        size_txt = f" [{n_unique} | {n_total} señales]"
 
-        lines.append(f"{pat_name} ({pat}){ret_txt}")
+        # cabecera del patrón
+        lines.append(f"{pat_name} ({pat}){ret_txt}{size_txt}")
 
+        # tickers del día
         for ticker in grouped[pat]:
             px = _load_close_price(ticker, ref_date)
             lines.append(f"• {ticker} @ {px}")
