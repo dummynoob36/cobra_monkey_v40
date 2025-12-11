@@ -63,6 +63,6 @@ jobs:
           path: |
             outputs/logs/
             outputs/daily_prices/
-            v40/data/dataset_v40.csv
+            data/dataset_v40.csv
           retention-days: 7
 
