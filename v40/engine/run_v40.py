@@ -26,6 +26,9 @@ PROJECT_ROOT = THIS_FILE.parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# Carpeta de histórico v4.0
+HISTORY_DIR = PROJECT_ROOT / "v40" / "history"
+
 
 # ============================================================
 # Utilidades
@@ -40,7 +43,64 @@ def _week_range(today: date):
     monday = today - pd.Timedelta(days=offset)
     friday = monday + pd.Timedelta(days=WEEKLY_WINDOW_DAYS - 1)
     return monday.date(), friday.date()
-    
+
+
+def _ensure_history_dir() -> Path:
+    """
+    Crea la carpeta de histórico si no existe y la devuelve.
+    """
+    HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+    return HISTORY_DIR
+
+
+def _safe_date_token(analysis_date: str | date) -> str:
+    """
+    Normaliza la fecha para usarla en nombres de fichero.
+    """
+    token = str(analysis_date)
+    # Por si en algún momento usamos "YYYY-MM-DD (week)" o similar,
+    # limpiamos espacios y caracteres raros.
+    token = token.replace(" ", "_").replace(":", "-").replace("/", "-")
+    return token
+
+
+def _save_daily_artifacts(
+    analysis_date: str | date,
+    df_v40: pd.DataFrame,
+    official_msg: str,
+    simple_msg: str,
+) -> None:
+    """
+    Guarda:
+      - Snapshot del dataset v40 en CSV
+      - Mensaje oficial en TXT
+      - Resumen simple en TXT
+    para la fecha de análisis indicada.
+    """
+    try:
+        hist_dir = _ensure_history_dir()
+        date_token = _safe_date_token(analysis_date)
+
+        # 1) Snapshot del dataset
+        snapshot_path = hist_dir / f"dataset_v40_{date_token}.csv"
+        df_copy = df_v40.copy()
+        df_copy.to_csv(snapshot_path, index=False)
+
+        # 2) Mensaje oficial
+        official_path = hist_dir / f"message_official_{date_token}.txt"
+        official_path.write_text(official_msg, encoding="utf-8")
+
+        # 3) Resumen simple
+        simple_path = hist_dir / f"summary_simple_{date_token}.txt"
+        simple_path.write_text(simple_msg, encoding="utf-8")
+
+        print(f"[V4][HISTORY] Artifacts guardados en {hist_dir} para {date_token}")
+
+    except Exception as e:
+        # No queremos que un fallo de escritura rompa todo el motor
+        print(f"[V4][HISTORY][WARN] No se pudieron guardar los artifacts de histórico: {e}")
+
+
 # ============================================================
 # RESUMEN SIMPLE AGRUPADO POR PATRÓN (v4.1)
 # ============================================================
@@ -78,9 +138,9 @@ def _load_close_price(ticker: str, signal_date: date):
         px = float(row["close"].iloc[0])
 
     return f"{px:.1f}"   # devolver con 1 decimal
-    
-    
-def compute_pattern_performance(df_dataset):
+
+
+def compute_pattern_performance(df_dataset: pd.DataFrame):
     """
     Devuelve un dict con el rendimiento por patrón:
     { pattern: (ret_sin_repetir, ret_con_repetir) }
@@ -125,6 +185,7 @@ def compute_pattern_performance(df_dataset):
 
     return results
 
+
 def compute_pattern_sample_sizes(df_base: pd.DataFrame) -> dict:
     """
     Devuelve para cada patrón:
@@ -146,9 +207,6 @@ def compute_pattern_sample_sizes(df_base: pd.DataFrame) -> dict:
         result[pat] = (n_unique, n_total)
 
     return result
-
-
-
 
 
 def build_simple_signal_summary(df_base: pd.DataFrame, ref_date: date) -> str:
@@ -201,7 +259,6 @@ def build_simple_signal_summary(df_base: pd.DataFrame, ref_date: date) -> str:
         lines.append("")
 
     return "\n".join(lines).strip()
-
 
 
 # ============================================================
@@ -260,6 +317,11 @@ def run_v40(no_telegram: bool = False) -> None:
     print("\n================ RESUMEN SIMPLE ================")
     print(simple_msg)
     print("================================================\n")
+
+    # --------------------------------------------------------
+    # FASE 2c — Guardar histórico local (dataset + mensajes)
+    # --------------------------------------------------------
+    _save_daily_artifacts(iso_date, df_v40, msg, simple_msg)
 
     # --------------------------------------------------------
     # FASE 3 — Envío Telegram
