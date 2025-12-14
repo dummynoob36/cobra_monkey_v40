@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from pathlib import Path
-from typing import List, Tuple
+from typing import Tuple
 
 import numpy as np
 import pandas as pd
@@ -12,7 +12,6 @@ from v40.config_v40 import (
     DATASET_V40_PATH,
     DATA_DIR,
 )
-
 
 # =============================================================================
 # UTILIDADES FECHA
@@ -52,8 +51,7 @@ def _load_daily_prices(ticker: str) -> pd.DataFrame | None:
     df["date"] = df["date"].dt.date
     orig_dates = df["date"].copy()
 
-    # --- FIX DEFINITIVO: ELIMINAR TODAS LAS COLUMNAS DUPLICADAS Y QUEDAR SOLO CON 1 ---
-    # Agrupar columnas por la parte antes del "."
+    # --- FIX DEFINITIVO COLUMNAS DUPLICADAS ---
     from collections import defaultdict
     groups = defaultdict(list)
 
@@ -69,19 +67,14 @@ def _load_daily_prices(ticker: str) -> pd.DataFrame | None:
             cleaned[base] = pd.Series([np.nan] * len(df))
             continue
 
-        # quedarse con la PRIMERA columna válida
         series = df[cols[0]]
-
-        # si la serie es 2D la convertimos a 1D cogiendo la primera columna
         if isinstance(series, pd.DataFrame):
             series = series.iloc[:, 0]
 
         cleaned[base] = series
 
-    # construir dataframe limpio
     df_clean = pd.DataFrame(cleaned)
 
-    # Validación final
     if df_clean["close"].isna().all():
         return None
 
@@ -101,8 +94,8 @@ def _rsi(x: pd.Series, period: int = 14) -> pd.Series:
     gain = diff.clip(lower=0)
     loss = -diff.clip(upper=0)
 
-    avg_gain = gain.ewm(alpha=1/period, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1/period, adjust=False).mean()
+    avg_gain = gain.ewm(alpha=1 / period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1 / period, adjust=False).mean()
 
     rs = avg_gain / avg_loss.replace(0, np.nan)
     return 100 - (100 / (1 + rs))
@@ -114,13 +107,16 @@ def _atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     close = df["close"]
 
     prev_close = close.shift(1)
-    tr = pd.concat([
-        high - low,
-        (high - prev_close).abs(),
-        (low - prev_close).abs(),
-    ], axis=1).max(axis=1)
+    tr = pd.concat(
+        [
+            high - low,
+            (high - prev_close).abs(),
+            (low - prev_close).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
 
-    return tr.ewm(alpha=1/period, adjust=False).mean()
+    return tr.ewm(alpha=1 / period, adjust=False).mean()
 
 
 def _compute_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -145,18 +141,15 @@ def _compute_features(df: pd.DataFrame) -> pd.DataFrame:
     bb_lo = ma20 - 2 * std20
     bb_width = (bb_up - bb_lo) / atr14
 
-    # Distancias normalizadas
     df["dist_ema20_atr"] = (close - ema20) / atr14
     df["dist_bb_lo_atr"] = (close - bb_lo) / atr14
     df["body_atr_ratio"] = (close - open_) / atr14
     df["wick_low_atr_ratio"] = (open_.where(open_ < close, close) - low) / atr14
     df["bb_width"] = bb_width
 
-    # Distancias en %
     df["dist_ema20_pct"] = (close / ema20 - 1) * 100
     df["dist_ema50_pct"] = (close / ema50 - 1) * 100
 
-    # Otros features
     df["rsi14"] = rsi14
     df["atr14"] = atr14
     df["roc10"] = roc10
@@ -193,56 +186,62 @@ def _compute_trend_regime_row(row):
 
 
 # =============================================================================
-# PATRONES A/B/D/E
+# PATRONES A / B / D / E
 # =============================================================================
 
 def _flag_A(r):
     return (
-        5 <= r.get("rsi14", np.nan) <= 35 and
-        -6 <= r.get("dist_ema20_atr", np.nan) <= -1.8 and
-        -2.5 <= r.get("dist_bb_lo_atr", np.nan) <= 1.5 and
-        abs(r.get("body_atr_ratio", np.nan)) <= 1.6
+        5 <= r.get("rsi14", np.nan) <= 35
+        and -6 <= r.get("dist_ema20_atr", np.nan) <= -1.8
+        and -2.5 <= r.get("dist_bb_lo_atr", np.nan) <= 1.5
+        and abs(r.get("body_atr_ratio", np.nan)) <= 1.6
     )
 
 
 def _flag_B(r):
     return (
-        20 <= r.get("rsi14", np.nan) <= 50 and
-        -3.5 <= r.get("dist_ema20_atr", np.nan) <= -0.8 and
-        -1 <= r.get("dist_bb_lo_atr", np.nan) <= 2.5 and
-        abs(r.get("body_atr_ratio", np.nan)) <= 1.0 and
-        (-2 <= r.get("vol_zscore10", np.nan) <= 2 or np.isnan(r.get("vol_zscore10")))
+        20 <= r.get("rsi14", np.nan) <= 50
+        and -3.5 <= r.get("dist_ema20_atr", np.nan) <= -0.8
+        and -1 <= r.get("dist_bb_lo_atr", np.nan) <= 2.5
+        and abs(r.get("body_atr_ratio", np.nan)) <= 1.0
+        and (-2 <= r.get("vol_zscore10", np.nan) <= 2 or np.isnan(r.get("vol_zscore10")))
     )
 
 
 def _flag_D(r):
     return (
-        25 <= r.get("rsi14", np.nan) <= 55 and
-        -2.5 <= r.get("dist_ema20_atr", np.nan) <= -1 and
-        0 <= r.get("dist_bb_lo_atr", np.nan) <= 4.5 and
-        abs(r.get("body_atr_ratio", np.nan)) <= 0.9 and
-        (-2 <= r.get("vol_zscore10", np.nan) <= 1.5 or np.isnan(r.get("vol_zscore10")))
+        25 <= r.get("rsi14", np.nan) <= 55
+        and -2.5 <= r.get("dist_ema20_atr", np.nan) <= -1
+        and 0 <= r.get("dist_bb_lo_atr", np.nan) <= 4.5
+        and abs(r.get("body_atr_ratio", np.nan)) <= 0.9
+        and (-2 <= r.get("vol_zscore10", np.nan) <= 1.5 or np.isnan(r.get("vol_zscore10")))
     )
 
 
 def _flag_E(r):
     return (
-        -1.8 <= r.get("dist_ema20_atr", np.nan) <= 1.0 and
-        0.5 <= r.get("dist_bb_lo_atr", np.nan) <= 6.5 and
-        abs(r.get("body_atr_ratio", np.nan)) <= 1.0 and
-        r.get("bb_width", np.nan) <= 2.5 and
-        (-2 <= r.get("vol_zscore10", np.nan) <= 1.5 or np.isnan(r.get("vol_zscore10")))
+        -1.8 <= r.get("dist_ema20_atr", np.nan) <= 1.0
+        and 0.5 <= r.get("dist_bb_lo_atr", np.nan) <= 6.5
+        and abs(r.get("body_atr_ratio", np.nan)) <= 1.0
+        and r.get("bb_width", np.nan) <= 2.5
+        and (-2 <= r.get("vol_zscore10", np.nan) <= 1.5 or np.isnan(r.get("vol_zscore10")))
     )
 
 
 def _classify_family(a, b, d, e):
     chosen = []
-    if a: chosen.append("A")
-    if b: chosen.append("B")
-    if d: chosen.append("D")
-    if e: chosen.append("E")
+    if a:
+        chosen.append("A")
+    if b:
+        chosen.append("B")
+    if d:
+        chosen.append("D")
+    if e:
+        chosen.append("E")
+
     if not chosen:
         return "OTHER"
+
     order = {"A": 0, "B": 1, "D": 2, "E": 3}
     return "_".join(sorted(chosen, key=lambda x: order[x]))
 
@@ -261,23 +260,21 @@ def _detect_eprime_and_super(row, regime, fam):
 
     fam_parts = fam.split("_")
 
-    # E-Prime
     is_eprime = False
     if "E" in fam_parts and regime == "UP":
         if (
-            45 <= rsi14 <= 65 and
-            -0.2 <= dist_ema20 <= 0.8 and
-            0.2 <= body <= 1.2 and
-            (bb_width <= 1.0 or abs(dist_bb_lo) <= 0.6)
+            45 <= rsi14 <= 65
+            and -0.2 <= dist_ema20 <= 0.8
+            and 0.2 <= body <= 1.2
+            and (bb_width <= 1.0 or abs(dist_bb_lo) <= 0.6)
         ):
             is_eprime = True
 
-    # Superseñales
     is_super = False
     super_type = ""
 
     if "A" in fam_parts:
-        if (rsi14 <= 32 and dist_bb_lo <= -1.2 and wick_low >= 0.4):
+        if rsi14 <= 32 and dist_bb_lo <= -1.2 and wick_low >= 0.4:
             is_super = True
             super_type = "REV_A_PROF"
 
@@ -299,7 +296,7 @@ def _detect_eprime_and_super(row, regime, fam):
 
 
 # =============================================================================
-# CANDIDATO CAMBIO DE TENDENCIA
+# CAMBIO DE TENDENCIA
 # =============================================================================
 
 def _is_change_candidate(row, regime, fam):
@@ -309,16 +306,17 @@ def _is_change_candidate(row, regime, fam):
     rsi14 = float(row.get("rsi14", np.nan))
     dist_ema20 = float(row.get("dist_ema20_atr", np.nan))
 
-    return (rsi14 < 30 and dist_ema20 < -1.0)
+    return rsi14 < 30 and dist_ema20 < -1.0
 
 
 # =============================================================================
-# CONSTRUCCIÓN DATASET V40
+# CONSTRUCCIÓN DATASET V40 (ACUMULATIVO)
 # =============================================================================
 
 def build_dataset_v40() -> Tuple[pd.DataFrame, date]:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    today = _today()
+
+    analysis_date = _today()
 
     # Cargar dataset previo
     if DATASET_V40_PATH.exists():
@@ -328,10 +326,9 @@ def build_dataset_v40() -> Tuple[pd.DataFrame, date]:
     else:
         df_prev = pd.DataFrame()
 
-    # No duplicar señales del día (solo si existe columna)
-    if not df_prev.empty and "signal_date" in df_prev.columns:
-        df_prev = df_prev[df_prev["signal_date"].dt.date != today]
-
+    # Evitar duplicar señales del mismo día de ejecución
+    if not df_prev.empty:
+        df_prev = df_prev[df_prev["signal_date"].dt.date != analysis_date]
 
     tickers = sorted(f.stem for f in DAILY_PRICES_DIR.glob("*.csv"))
 
@@ -346,12 +343,15 @@ def build_dataset_v40() -> Tuple[pd.DataFrame, date]:
         dates_set = set(dfp["date"])
         last_date = max(dates_set)
 
-        if today in dates_set:
-            use_date = today
+        if analysis_date in dates_set:
+            use_date = analysis_date
         else:
             use_date = last_date
             if not example_printed:
-                print(f"[V4][INFO] No hay vela para {today}. Usando última {last_date} (ejemplo: {ticker})")
+                print(
+                    f"[V4][INFO] No hay vela para {analysis_date}. "
+                    f"Usando última {last_date} (ejemplo: {ticker})"
+                )
                 example_printed = True
 
         df_cut = dfp[dfp["date"] <= use_date].tail(120)
@@ -365,30 +365,29 @@ def build_dataset_v40() -> Tuple[pd.DataFrame, date]:
 
         row = row_today.iloc[0]
 
-        # Flags
-        flagA = _flag_A(row)
-        flagB = _flag_B(row)
-        flagD = _flag_D(row)
-        flagE = _flag_E(row)
+        A = _flag_A(row)
+        B = _flag_B(row)
+        D = _flag_D(row)
+        E = _flag_E(row)
 
-        if not any([flagA, flagB, flagD, flagE]):
+        if not any([A, B, D, E]):
             continue
 
         regime, up, down, rng = _compute_trend_regime_row(row)
-        fam = _classify_family(flagA, flagB, flagD, flagE)
+        fam = _classify_family(A, B, D, E)
 
         is_eprime, is_super, super_type = _detect_eprime_and_super(row, regime, fam)
         is_change = _is_change_candidate(row, regime, fam)
 
         rec = {
             "ticker": ticker,
-            "signal_date": use_date.isoformat(),
+            "signal_date": analysis_date.isoformat(),
             "system": "v40",
             "pattern_family": fam,
-            "A_sobreventa_estructural": flagA,
-            "B_rebote_suave": flagB,
-            "D_pullback_controlado": flagD,
-            "E_microcorreccion_compresion": flagE,
+            "A_sobreventa_estructural": A,
+            "B_rebote_suave": B,
+            "D_pullback_controlado": D,
+            "E_microcorreccion_compresion": E,
             "rsi14": float(row.get("rsi14", np.nan)),
             "atr14": float(row.get("atr14", np.nan)),
             "dist_ema20_atr": float(row.get("dist_ema20_atr", np.nan)),
@@ -414,10 +413,7 @@ def build_dataset_v40() -> Tuple[pd.DataFrame, date]:
 
     df_new = pd.DataFrame(records)
 
-    # MERGE
-    if df_prev.empty and df_new.empty:
-        df_all = df_prev
-    elif df_prev.empty:
+    if df_prev.empty:
         df_all = df_new
     elif df_new.empty:
         df_all = df_prev
@@ -430,7 +426,7 @@ def build_dataset_v40() -> Tuple[pd.DataFrame, date]:
         df_all.to_csv(DATASET_V40_PATH, index=False)
         start_date = df_all["signal_date"].dt.date.min()
     else:
-        start_date = today
+        start_date = analysis_date
 
     print(f"[V4][OK] dataset_v40 guardado ({len(df_all)} filas)")
     return df_all, start_date
