@@ -2,8 +2,9 @@ name: "Cobra v4.0 — Daily Engine"
 
 on:
   schedule:
-    # Lunes–Viernes a las 21:30 UTC (22:30 España)
-    - cron: "30 21 * * 1-5"
+    # Lunes–Viernes a las 22:45 UTC.
+    # Busca tener cerrados US + EU y dar tiempo a que el proveedor publique barras diarias estables.
+    - cron: "45 22 * * 1-5"
   workflow_dispatch:
 
 permissions:
@@ -21,6 +22,8 @@ jobs:
       # ---------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       # ---------------------------------------------
       # 2. Preparar Python 3.12
@@ -50,23 +53,36 @@ jobs:
           export PYTHONPATH="$(pwd):$PYTHONPATH"
           echo "PYTHONPATH DESPUÉS: $PYTHONPATH"
 
+          touch data/portfolio_v40.csv
           python -m v40.engine.run_v40
 
       # ---------------------------------------------
-      # 5. Commit automático del dataset v40 (si cambia)
+      # 5. Commit automático del estado operativo (si cambia)
       # ---------------------------------------------
-      - name: Commit dataset_v40 if updated
+      - name: Commit operational state if updated
         run: |
           git config user.name "cobra-monkey-bot"
           git config user.email "cobra-monkey@users.noreply.github.com"
 
+          CHANGED=false
+
           if git status --porcelain | grep "data/dataset_v40.csv"; then
-            echo "📈 Dataset actualizado → commit automático"
+            echo "📈 Dataset actualizado"
             git add data/dataset_v40.csv
-            git commit -m "data(v40): update dataset_v40 [auto]"
+            CHANGED=true
+          fi
+
+          if git status --porcelain | grep "data/portfolio_v40.csv"; then
+            echo "📦 Portfolio operativo actualizado"
+            git add data/portfolio_v40.csv
+            CHANGED=true
+          fi
+
+          if [ "$CHANGED" = true ]; then
+            git commit -m "ops(v40): update dataset and portfolio [auto]" || echo "ℹ️ Nada que commitear finalmente"
             git push
           else
-            echo "ℹ️ Dataset sin cambios → no commit"
+            echo "ℹ️ Estado operativo sin cambios → no commit"
           fi
 
       # ---------------------------------------------
@@ -81,5 +97,6 @@ jobs:
             outputs/logs/
             outputs/daily_prices/
             data/dataset_v40.csv
+            data/portfolio_v40.csv
           retention-days: 7
 

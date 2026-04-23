@@ -1,0 +1,9 @@
+🐍 Cobra v4.0 · Diario Operable
+📅 Fecha análisis: 2026-04-23
+📌 Estado: OK
+━━━━━━━━━━━━━━━━━━
+Setups válidos detectados hoy: 0
+Baseline operativo sugerido: max 8 posiciones / cooldown 10d
+Cupos por setup: US=2, GLOBAL=4, D_EU=2
+━━━━━━━━━━━━━━━━━━
+Hoy no hay señales operables en los 3 setups validados.

@@ -12,7 +12,10 @@ import pandas as pd
 from v40.config_v40 import DAILY_PRICES_DIR, DATASET_V40_PATH, WEEKLY_WINDOW_DAYS
 from v40.engine.fetch_daily_prices_v40 import run_daily_prices_v40
 from v40.engine.build_dataset_v40 import build_dataset_v40
-from v40.reports_v40 import build_daily_eprime_report, build_weekly_report
+from v40.reports_v40 import build_daily_valid_setups_report, build_weekly_report
+from v40.pattern_validation import build_pattern_validation_report
+from v40.portfolio import close_positions_with_market_data, generate_entry_records, load_portfolio, save_portfolio, select_entries
+from v40.telegram_ops import build_entry_alert, build_exit_alert, build_portfolio_status_alert
 from scripts.tracking.tracking_engine_v40 import send_telegram_message
 
 
@@ -117,6 +120,14 @@ PATTERN_NAMES = {
     "B_D_E": "🟣 Triple Confluencia B+D+E",
 }
 
+QUALITY_ICONS = {
+    "HIGH": "🔥",
+    "MEDIUM": "✅",
+    "SPECULATIVE": "🧪",
+    "LOW": "⚪",
+    "AVOID": "⛔",
+}
+
 
 def _load_close_price(ticker: str, signal_date: date):
     csv_path = DAILY_PRICES_DIR / f"{ticker}.csv"
@@ -210,7 +221,10 @@ def compute_pattern_sample_sizes(df_base: pd.DataFrame) -> dict:
 
 
 def build_simple_signal_summary(df_base: pd.DataFrame, ref_date: date) -> str:
-    df_day = df_base[df_base["signal_date"].dt.date == ref_date]
+    df_day = df_base[
+        (df_base["signal_date"].dt.date == ref_date)
+        & (df_base.get("signal_status", "new") != "disabled")
+    ]
 
     if df_day.empty:
         return f"📊 Señales Cobra v4.0 ({ref_date})\nSin señales hoy."
@@ -224,7 +238,7 @@ def build_simple_signal_summary(df_base: pd.DataFrame, ref_date: date) -> str:
     grouped = {}
     for _, row in df_day.iterrows():
         pat = row["pattern_family"]
-        grouped.setdefault(pat, []).append(row["ticker"])
+        grouped.setdefault(pat, []).append(row)
 
     lines = [f"📊 Señales Cobra v4.0 ({ref_date})", ""]
 
@@ -252,9 +266,28 @@ def build_simple_signal_summary(df_base: pd.DataFrame, ref_date: date) -> str:
         lines.append(f"{pat_name} ({pat}){ret_txt}{size_txt}")
 
         # tickers del día
-        for ticker in grouped[pat]:
+        rows = sorted(
+            grouped[pat],
+            key=lambda r: (
+                {"HIGH": 0, "MEDIUM": 1, "SPECULATIVE": 2, "LOW": 3, "AVOID": 4}.get(r.get("quality_tier", "LOW"), 9),
+                -float(r.get("signal_score", 0) or 0),
+                str(r.get("ticker", "")),
+            )
+        )
+
+        for row in rows:
+            ticker = row["ticker"]
             px = _load_close_price(ticker, ref_date)
-            lines.append(f"• {ticker} @ {px}")
+            quality = row.get("quality_tier", "")
+            score = row.get("signal_score", "")
+            setup = row.get("setup_code", "")
+            horizon = row.get("holding_horizon_days", "")
+            q_icon = QUALITY_ICONS.get(quality, "")
+            quality_txt = f" {q_icon}{quality}" if quality else ""
+            score_txt = f" [{int(score)}]" if score != "" and pd.notna(score) else ""
+            setup_txt = f" <{setup}>" if setup else ""
+            horizon_txt = f" {int(horizon)}d" if horizon != "" and pd.notna(horizon) else ""
+            lines.append(f"• {ticker} @ {px}{quality_txt}{score_txt}{setup_txt}{horizon_txt}")
 
         lines.append("")
 
@@ -301,7 +334,7 @@ def run_v40(no_telegram: bool = False) -> None:
     # FASE 2 — Mensaje oficial
     # --------------------------------------------------------
     if weekday < 4:
-        iso_date, msg = build_daily_eprime_report(df_v40, today)
+        iso_date, msg = build_daily_valid_setups_report(df_v40, today)
     else:
         iso_date, msg = build_weekly_report(df_v40, today)
 
@@ -313,13 +346,39 @@ def run_v40(no_telegram: bool = False) -> None:
     # FASE 2b — Resumen simple (Patrón–Ticker–Precio)
     # --------------------------------------------------------
     simple_msg = build_simple_signal_summary(df_v40, today)
+    validation_msg = build_pattern_validation_report(df_v40)
 
     print("\n================ RESUMEN SIMPLE ================")
     print(simple_msg)
     print("================================================\n")
 
+    print("\n============== VALIDACIÓN DE PATRONES ==============")
+    print(validation_msg)
+    print("===================================================\n")
+
     # --------------------------------------------------------
-    # FASE 2c — Guardar histórico local (dataset + mensajes)
+    # FASE 2c — Cartera viva: cierres + nuevas entradas
+    # --------------------------------------------------------
+    portfolio = load_portfolio()
+    portfolio, closed_positions = close_positions_with_market_data(portfolio, as_of=pd.to_datetime(today))
+
+    today_signals = df_v40[
+        (df_v40['signal_date'].dt.date == today)
+        & (df_v40.get('signal_status', 'new') != 'disabled')
+    ].copy()
+    selected_entries = select_entries(today_signals, portfolio)
+    new_records = generate_entry_records(selected_entries)
+    if not new_records.empty:
+        portfolio = pd.concat([portfolio, new_records], ignore_index=True)
+
+    save_portfolio(portfolio)
+
+    entry_msg = build_entry_alert(selected_entries, iso_date)
+    exit_msg = build_exit_alert(closed_positions, iso_date)
+    portfolio_msg = build_portfolio_status_alert(portfolio, iso_date)
+
+    # --------------------------------------------------------
+    # FASE 2d — Guardar histórico local (dataset + mensajes)
     # --------------------------------------------------------
     _save_daily_artifacts(iso_date, df_v40, msg, simple_msg)
 
@@ -330,10 +389,26 @@ def run_v40(no_telegram: bool = False) -> None:
         print("[V4] Enviando mensaje oficial…")
         send_telegram_message(msg)
 
-        print("[V4] Enviando resumen simple…")
-        send_telegram_message(simple_msg)
+        if entry_msg:
+            print("[V4] Enviando entradas…")
+            send_telegram_message(entry_msg)
+
+        if exit_msg:
+            print("[V4] Enviando salidas…")
+            send_telegram_message(exit_msg)
+
+        if portfolio_msg:
+            print("[V4] Enviando estado cartera…")
+            send_telegram_message(portfolio_msg)
     else:
         print("[V4] --no-telegram activado.")
+        if entry_msg:
+            print(entry_msg)
+        if exit_msg:
+            print(exit_msg)
+        if portfolio_msg:
+            print(portfolio_msg)
+        print("[V4] Validación de patrones generada solo en consola/local.")
 
     print(f"[V4] Ejecución completa ({iso_date}).")
 

@@ -27,6 +27,7 @@ from v40.engine_v40 import (
     get_today_eprime_signals,
     get_weekly_signals_summary,
 )
+from v40.operability import VALID_SETUPS, DEFAULT_BASELINE_COOLDOWN_DAYS, DEFAULT_BASELINE_MAX_CONCURRENT, DEFAULT_SETUP_CAPS
 from scripts.telegram.telegram_formatter import build_message
 
 
@@ -42,42 +43,72 @@ def _ensure_date(d: date | None) -> date:
 # Mensaje diario — Señales E-Prime
 # ============================================================
 
-def build_daily_eprime_report(df_base: pd.DataFrame, ref_date: date | None = None) -> Tuple[str, str]:
+def build_daily_valid_setups_report(df_base: pd.DataFrame, ref_date: date | None = None) -> Tuple[str, str]:
     """
-    Construye el mensaje diario para Cobra v4.0 basado en señales E-Prime.
+    Construye el mensaje diario para Cobra v4.0 basado solo en setups válidos operables.
 
     Retorna:
         (date_str, message_text)
     """
     ref_date = _ensure_date(ref_date)
 
-    df_eprime = get_today_eprime_signals(df_base, ref_date=ref_date)
-    n_eprime = len(df_eprime)
+    df_today = get_today_eprime_signals(df_base, ref_date=ref_date)
+    if df_today.empty:
+        df_today = df_base.copy()
+        if 'signal_date' in df_today.columns:
+            df_today['signal_date'] = pd.to_datetime(df_today['signal_date'], errors='coerce')
+            df_today = df_today[df_today['signal_date'].dt.date == ref_date]
+
+    if not df_today.empty:
+        if 'signal_status' in df_today.columns:
+            df_today = df_today[df_today['signal_status'] != 'disabled']
+        if 'setup_code' in df_today.columns:
+            df_today = df_today[df_today['setup_code'].isin(VALID_SETUPS)]
+
+    n_signals = len(df_today)
 
     summary_lines: List[str] = [
-        f"Señales E-Prime detectadas hoy: {n_eprime}",
+        f"Setups válidos detectados hoy: {n_signals}",
+        f"Baseline operativo sugerido: max {DEFAULT_BASELINE_MAX_CONCURRENT} posiciones / cooldown {DEFAULT_BASELINE_COOLDOWN_DAYS}d",
+        f"Cupos por setup: US={DEFAULT_SETUP_CAPS.get('A_REV_US', '-')}, GLOBAL={DEFAULT_SETUP_CAPS.get('A_REV_GLOBAL', '-')}, D_EU={DEFAULT_SETUP_CAPS.get('D_EU_TACTICAL', '-')}",
     ]
 
     data_lines: List[str] = []
 
-    if n_eprime == 0:
-        data_lines.append("Hoy no hay señales E-Prime en v4.0.")
+    if n_signals == 0:
+        data_lines.append("Hoy no hay señales operables en los 3 setups validados.")
     else:
-        data_lines.append("Detalle de señales E-Prime:")
-        for _, row in df_eprime.iterrows():
+        data_lines.append("Detalle de señales operables priorizadas:")
+        df_today = df_today.sort_values(by=[c for c in ['signal_score', 'quality_tier', 'ticker'] if c in df_today.columns], ascending=[False, True, True])
+        for _, row in df_today.iterrows():
             ticker = row["ticker"]
-            fam = row.get("pattern_family", "E_PRIME")
+            fam = row.get("pattern_family", "SETUP")
+            setup = row.get("setup_code", "")
+            quality = row.get("quality_tier", "")
+            score = row.get("signal_score", "")
+            target = row.get("target_price", None)
+            stop = row.get("stop_price", None)
             super_flag = bool(row.get("is_supersignal_v40", False))
             super_type = row.get("supersignal_tipo_v40", "")
 
             extra = ""
+            if setup:
+                extra += f" · SETUP={setup}"
+            if quality:
+                extra += f" · Q={quality}"
+            if score != "" and pd.notna(score):
+                extra += f" · SCORE={int(score)}"
+            if stop is not None and pd.notna(stop):
+                extra += f" · STOP={float(stop):.2f}"
+            if target is not None and pd.notna(target):
+                extra += f" · TARGET={float(target):.2f}"
             if super_flag:
-                extra = f" · SUPER={super_type or 'GENERICA'}"
+                extra += f" · SUPER={super_type or 'GENERICA'}"
 
             data_lines.append(f"• {ticker} [{fam}]{extra}")
 
     msg = build_message(
-        phase="🐍 Cobra v4.0 · Diario (E-Prime)",
+        phase="🐍 Cobra v4.0 · Diario Operable",
         date=ref_date.isoformat(),
         status="OK",
         summary_lines=summary_lines,
@@ -113,9 +144,9 @@ def build_weekly_report(df_base: pd.DataFrame, ref_date: date | None = None) -> 
     if summary is None or summary.empty:
         data_lines.append("No hay señales registradas en la ventana semanal.")
     else:
-        data_lines.append("Resumen semanal por patrón:")
+        data_lines.append("Resumen semanal por setup válido:")
         for _, row in summary.iterrows():
-            fam = row["pattern_family"]
+            fam = row["setup_code"]
             n = int(row["n_signals"])
             data_lines.append(f"• {fam}: {n}")
 

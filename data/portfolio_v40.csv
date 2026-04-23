@@ -1,0 +1,1 @@
+ticker,setup_code,signal_date,entry_price,stop_price,target_price,holding_horizon_days,signal_score,quality_tier,trade_style,status,opened_at,planned_exit_date,closed_at,exit_reason,exit_price,pnl_pct

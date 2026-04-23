@@ -24,6 +24,8 @@ from typing import Tuple
 
 import pandas as pd
 
+from v40.operability import VALID_SETUPS
+
 
 # ============================================================
 # Utilidades internas
@@ -74,11 +76,29 @@ def get_today_eprime_signals(df: pd.DataFrame, ref_date: date | None = None) -> 
 
     df_eprime = df_today[df_today["is_e_prime_v40"] == True].copy()
 
+    if 'setup_code' in df_today.columns:
+        df_valid = df_today[df_today['setup_code'].isin(VALID_SETUPS)].copy()
+        if not df_valid.empty:
+            df_eprime = pd.concat([df_eprime, df_valid], ignore_index=True).drop_duplicates()
+
     # Ordenar columnas
     cols = [
         "ticker",
         "signal_date",
         "pattern_family",
+        "setup_code",
+        "setup_note",
+        "holding_horizon_days",
+        "trade_style",
+        "entry_price",
+        "stop_price",
+        "target_price",
+        "signal_status",
+        "market_bucket",
+        "quality_tier",
+        "quality_note",
+        "signal_score",
+        "signal_score_reasons",
         "is_supersignal_v40",
         "supersignal_tipo_v40",
     ]
@@ -131,12 +151,20 @@ def get_weekly_signals_summary(
     if df_week.empty:
         return df_week, pd.DataFrame()
 
-    if "pattern_family" not in df_week.columns:
-        df_week["pattern_family"] = "NONE"
+    if 'signal_status' in df_week.columns:
+        df_week = df_week[df_week['signal_status'] != 'disabled']
+    if 'setup_code' in df_week.columns:
+        df_week = df_week[df_week['setup_code'].isin(VALID_SETUPS)]
+
+    if df_week.empty:
+        return df_week, pd.DataFrame()
+
+    if "setup_code" not in df_week.columns:
+        df_week["setup_code"] = "NONE"
 
     summary = (
         df_week
-        .groupby(["pattern_family"], dropna=False)
+        .groupby(["setup_code"], dropna=False)
         .agg(n_signals=("ticker", "count"))
         .reset_index()
         .sort_values("n_signals", ascending=False)

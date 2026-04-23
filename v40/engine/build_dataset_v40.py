@@ -12,6 +12,11 @@ from v40.config_v40 import (
     DATASET_V40_PATH,
     DATA_DIR,
 )
+from v40.pattern_definitions import flag_pattern
+from v40.pattern_quality import classify_signal_quality, market_bucket_for_ticker
+from v40.signal_scoring import compute_signal_score
+from v40.setup_definitions import derive_setup, derive_trade_plan
+from v40.operability import VALID_SETUPS
 
 # =============================================================================
 # UTILIDADES FECHA
@@ -190,42 +195,19 @@ def _compute_trend_regime_row(row):
 # =============================================================================
 
 def _flag_A(r):
-    return (
-        5 <= r.get("rsi14", np.nan) <= 35
-        and -6 <= r.get("dist_ema20_atr", np.nan) <= -1.8
-        and -2.5 <= r.get("dist_bb_lo_atr", np.nan) <= 1.5
-        and abs(r.get("body_atr_ratio", np.nan)) <= 1.6
-    )
+    return flag_pattern(r, "A")
 
 
 def _flag_B(r):
-    return (
-        20 <= r.get("rsi14", np.nan) <= 50
-        and -3.5 <= r.get("dist_ema20_atr", np.nan) <= -0.8
-        and -1 <= r.get("dist_bb_lo_atr", np.nan) <= 2.5
-        and abs(r.get("body_atr_ratio", np.nan)) <= 1.0
-        and (-2 <= r.get("vol_zscore10", np.nan) <= 2 or np.isnan(r.get("vol_zscore10")))
-    )
+    return flag_pattern(r, "B")
 
 
 def _flag_D(r):
-    return (
-        25 <= r.get("rsi14", np.nan) <= 55
-        and -2.5 <= r.get("dist_ema20_atr", np.nan) <= -1
-        and 0 <= r.get("dist_bb_lo_atr", np.nan) <= 4.5
-        and abs(r.get("body_atr_ratio", np.nan)) <= 0.9
-        and (-2 <= r.get("vol_zscore10", np.nan) <= 1.5 or np.isnan(r.get("vol_zscore10")))
-    )
+    return flag_pattern(r, "D")
 
 
 def _flag_E(r):
-    return (
-        -1.8 <= r.get("dist_ema20_atr", np.nan) <= 1.0
-        and 0.5 <= r.get("dist_bb_lo_atr", np.nan) <= 6.5
-        and abs(r.get("body_atr_ratio", np.nan)) <= 1.0
-        and r.get("bb_width", np.nan) <= 2.5
-        and (-2 <= r.get("vol_zscore10", np.nan) <= 1.5 or np.isnan(r.get("vol_zscore10")))
-    )
+    return flag_pattern(r, "E")
 
 
 def _classify_family(a, b, d, e):
@@ -379,6 +361,30 @@ def build_dataset_v40() -> Tuple[pd.DataFrame, date]:
         is_eprime, is_super, super_type = _detect_eprime_and_super(row, regime, fam)
         is_change = _is_change_candidate(row, regime, fam)
 
+        market_bucket = market_bucket_for_ticker(ticker)
+        quality_tier, quality_note = classify_signal_quality(pd.Series({
+            "ticker": ticker,
+            "pattern_family": fam,
+            "trend_regime": regime,
+        }))
+        base_signal = pd.Series({
+            "ticker": ticker,
+            "pattern_family": fam,
+            "trend_regime": regime,
+            "quality_tier": quality_tier,
+            "market_bucket": market_bucket,
+            "rsi14": float(row.get("rsi14", np.nan)),
+            "dist_ema20_atr": float(row.get("dist_ema20_atr", np.nan)),
+            "bb_width": float(row.get("bb_width", np.nan)),
+            "atr14": float(row.get("atr14", np.nan)),
+            "close": float(row.get("close", np.nan)),
+        })
+        signal_score, signal_score_reasons = compute_signal_score(base_signal)
+        setup_code, setup_note, holding_horizon_days = derive_setup(base_signal)
+        trade_style, entry_price, stop_price, target_price = derive_trade_plan(base_signal)
+
+        signal_status = 'new' if setup_code in VALID_SETUPS else 'disabled'
+
         rec = {
             "ticker": ticker,
             "signal_date": analysis_date.isoformat(),
@@ -400,6 +406,7 @@ def build_dataset_v40() -> Tuple[pd.DataFrame, date]:
             "roc10": float(row.get("roc10", np.nan)),
             "vol_zscore10": float(row.get("vol_zscore10", np.nan)),
             "trend_regime": regime,
+            "market_bucket": market_bucket,
             "is_trend_up": up,
             "is_trend_down": down,
             "is_trend_range": rng,
@@ -407,6 +414,18 @@ def build_dataset_v40() -> Tuple[pd.DataFrame, date]:
             "supersignal_tipo_v40": super_type if is_super else "",
             "is_e_prime_v40": is_eprime,
             "is_change_candidate": is_change,
+            "quality_tier": quality_tier,
+            "quality_note": quality_note,
+            "signal_score": signal_score,
+            "signal_score_reasons": signal_score_reasons,
+            "setup_code": setup_code,
+            "setup_note": setup_note,
+            "holding_horizon_days": holding_horizon_days,
+            "trade_style": trade_style,
+            "entry_price": entry_price,
+            "stop_price": stop_price,
+            "target_price": target_price,
+            "signal_status": signal_status,
         }
 
         records.append(rec)
