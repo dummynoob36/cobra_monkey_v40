@@ -80,7 +80,8 @@ jobs:
 
           if [ "$CHANGED" = true ]; then
             git commit -m "ops(v40): update dataset and portfolio [auto]" || echo "ℹ️ Nada que commitear finalmente"
-            git push
+            git pull --rebase origin main
+            git push origin HEAD:main
           else
             echo "ℹ️ Estado operativo sin cambios → no commit"
           fi

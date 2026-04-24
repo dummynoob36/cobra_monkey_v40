@@ -13,7 +13,6 @@ from v40.config_v40 import DAILY_PRICES_DIR, DATASET_V40_PATH, WEEKLY_WINDOW_DAY
 from v40.engine.fetch_daily_prices_v40 import run_daily_prices_v40
 from v40.engine.build_dataset_v40 import build_dataset_v40
 from v40.reports_v40 import build_daily_valid_setups_report, build_weekly_report
-from v40.pattern_validation import build_pattern_validation_report
 from v40.portfolio import close_positions_with_market_data, generate_entry_records, load_portfolio, save_portfolio, select_entries
 from v40.telegram_ops import build_entry_alert, build_exit_alert, build_portfolio_status_alert
 from scripts.tracking.tracking_engine_v40 import send_telegram_message
@@ -346,15 +345,10 @@ def run_v40(no_telegram: bool = False) -> None:
     # FASE 2b — Resumen simple (Patrón–Ticker–Precio)
     # --------------------------------------------------------
     simple_msg = build_simple_signal_summary(df_v40, today)
-    validation_msg = build_pattern_validation_report(df_v40)
 
     print("\n================ RESUMEN SIMPLE ================")
     print(simple_msg)
     print("================================================\n")
-
-    print("\n============== VALIDACIÓN DE PATRONES ==============")
-    print(validation_msg)
-    print("===================================================\n")
 
     # --------------------------------------------------------
     # FASE 2c — Cartera viva: cierres + nuevas entradas
@@ -386,9 +380,6 @@ def run_v40(no_telegram: bool = False) -> None:
     # FASE 3 — Envío Telegram
     # --------------------------------------------------------
     if not no_telegram:
-        print("[V4] Enviando mensaje oficial…")
-        send_telegram_message(msg)
-
         if entry_msg:
             print("[V4] Enviando entradas…")
             send_telegram_message(entry_msg)
@@ -400,15 +391,18 @@ def run_v40(no_telegram: bool = False) -> None:
         if portfolio_msg:
             print("[V4] Enviando estado cartera…")
             send_telegram_message(portfolio_msg)
+
+        if not entry_msg and not exit_msg and not portfolio_msg:
+            print("[V4] Sin cambios operativos para Telegram.")
     else:
         print("[V4] --no-telegram activado.")
+        print(msg)
         if entry_msg:
             print(entry_msg)
         if exit_msg:
             print(exit_msg)
         if portfolio_msg:
             print(portfolio_msg)
-        print("[V4] Validación de patrones generada solo en consola/local.")
 
     print(f"[V4] Ejecución completa ({iso_date}).")
 
