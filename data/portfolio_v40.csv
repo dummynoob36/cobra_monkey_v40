@@ -1,1 +1,2 @@
 ticker,setup_code,signal_date,entry_price,stop_price,target_price,holding_horizon_days,signal_score,quality_tier,trade_style,status,opened_at,planned_exit_date,closed_at,exit_reason,exit_price,pnl_pct
+CTT.LS,D_EU_TACTICAL,2026-04-24,6.289999961853027,6.113688390026201,6.536836162410584,5,68,MEDIUM,tactical_pullback_compact,open,2026-04-24,2026-04-29,,,,
