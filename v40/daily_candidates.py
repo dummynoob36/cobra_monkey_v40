@@ -134,7 +134,13 @@ def build_daily_candidates(df_dataset: pd.DataFrame, ref_date=None) -> tuple[pd.
     if 'market_bucket' not in df_day.columns and 'ticker' in df_day.columns:
         df_day['market_bucket'] = df_day['ticker'].astype(str).map(market_bucket_for_ticker)
 
-    enriched_day = annotate_with_evidence(df_day)
+    enriched_day = df_day.copy()
+    required_evidence_cols = {'ret_5d', 'ret_10d', 'ret_20d'}
+    if required_evidence_cols.issubset(enriched_day.columns):
+        try:
+            enriched_day = annotate_with_evidence(df_day)
+        except Exception:
+            enriched_day = df_day.copy()
     eligible = _base_candidate_filters(enriched_day)
     if 'evidence_score' in eligible.columns:
         eligible = eligible[eligible['evidence_score'].fillna(0) >= MIN_EVIDENCE_SCORE]
