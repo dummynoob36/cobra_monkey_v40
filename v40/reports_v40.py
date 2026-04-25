@@ -28,7 +28,12 @@ from v40.engine_v40 import (
     get_weekly_signals_summary,
 )
 from v40.operability import VALID_SETUPS, DEFAULT_BASELINE_COOLDOWN_DAYS, DEFAULT_BASELINE_MAX_CONCURRENT, DEFAULT_SETUP_CAPS
+from v40.daily_candidates import build_daily_candidates
 from scripts.telegram.telegram_formatter import build_message
+
+
+def _bucket_label(bucket: str) -> str:
+    return 'US/Other' if str(bucket) == 'US_OR_OTHER' else str(bucket)
 
 
 # ============================================================
@@ -52,60 +57,64 @@ def build_daily_valid_setups_report(df_base: pd.DataFrame, ref_date: date | None
     """
     ref_date = _ensure_date(ref_date)
 
-    df_today = get_today_eprime_signals(df_base, ref_date=ref_date)
-    if df_today.empty:
-        df_today = df_base.copy()
-        if 'signal_date' in df_today.columns:
-            df_today['signal_date'] = pd.to_datetime(df_today['signal_date'], errors='coerce')
-            df_today = df_today[df_today['signal_date'].dt.date == ref_date]
-
-    if not df_today.empty:
-        if 'signal_status' in df_today.columns:
-            df_today = df_today[df_today['signal_status'] != 'disabled']
-        if 'setup_code' in df_today.columns:
-            df_today = df_today[df_today['setup_code'].isin(VALID_SETUPS)]
-
+    df_today, selection_summary = build_daily_candidates(df_base, ref_date=ref_date)
     n_signals = len(df_today)
 
     summary_lines: List[str] = [
-        f"Setups válidos detectados hoy: {n_signals}",
-        f"Baseline operativo sugerido: max {DEFAULT_BASELINE_MAX_CONCURRENT} posiciones / cooldown {DEFAULT_BASELINE_COOLDOWN_DAYS}d",
-        f"Cupos por setup: US={DEFAULT_SETUP_CAPS.get('A_REV_US', '-')}, GLOBAL={DEFAULT_SETUP_CAPS.get('A_REV_GLOBAL', '-')}, D_EU={DEFAULT_SETUP_CAPS.get('D_EU_TACTICAL', '-')}",
+        f"Señales vistas hoy: {selection_summary.total_signals_seen}",
+        f"Elegibles tras filtros estrictos: {selection_summary.eligible_after_filters}",
+        f"Candidatas finales: {selection_summary.final_candidates}",
+        "Política: no forzar señales si no superan calidad + contexto + score.",
     ]
 
     data_lines: List[str] = []
 
     if n_signals == 0:
-        data_lines.append("Hoy no hay señales operables en los 3 setups validados.")
+        data_lines.append("Hoy no hay candidatas con calidad suficiente. Eso es correcto.")
     else:
-        data_lines.append("Detalle de señales operables priorizadas:")
-        df_today = df_today.sort_values(by=[c for c in ['signal_score', 'quality_tier', 'ticker'] if c in df_today.columns], ascending=[False, True, True])
-        for _, row in df_today.iterrows():
-            ticker = row["ticker"]
-            fam = row.get("pattern_family", "SETUP")
-            setup = row.get("setup_code", "")
-            quality = row.get("quality_tier", "")
-            score = row.get("signal_score", "")
-            target = row.get("target_price", None)
-            stop = row.get("stop_price", None)
-            super_flag = bool(row.get("is_supersignal_v40", False))
-            super_type = row.get("supersignal_tipo_v40", "")
+        data_lines.append("Top candidatas del día:")
+        if 'market_bucket' in df_today.columns:
+            grouped = list(df_today.groupby('market_bucket', dropna=False))
+        else:
+            grouped = [('ALL', df_today)]
 
-            extra = ""
-            if setup:
-                extra += f" · SETUP={setup}"
-            if quality:
-                extra += f" · Q={quality}"
-            if score != "" and pd.notna(score):
-                extra += f" · SCORE={int(score)}"
-            if stop is not None and pd.notna(stop):
-                extra += f" · STOP={float(stop):.2f}"
-            if target is not None and pd.notna(target):
-                extra += f" · TARGET={float(target):.2f}"
-            if super_flag:
-                extra += f" · SUPER={super_type or 'GENERICA'}"
+        for bucket, grp in grouped:
+            data_lines.append(f"")
+            data_lines.append(f"{_bucket_label(bucket)}")
+            grp = grp.sort_values(
+                by=[c for c in ['evidence_score', 'signal_score', 'ticker'] if c in grp.columns],
+                ascending=[False, False, True][:len([c for c in ['evidence_score', 'signal_score', 'ticker'] if c in grp.columns])]
+            )
+            for _, row in grp.iterrows():
+                ticker = row["ticker"]
+                setup = row.get("setup_code", "")
+                quality = row.get("quality_tier", "")
+                score = row.get("signal_score", "")
+                evidence = row.get("evidence_score", "")
+                target = row.get("target_price", None)
+                stop = row.get("stop_price", None)
+                close = row.get("close", None)
+                note = str(row.get("setup_note", "")).strip()
 
-            data_lines.append(f"• {ticker} [{fam}]{extra}")
+                parts = [ticker]
+                if setup:
+                    parts.append(f"{setup}")
+                if quality:
+                    parts.append(f"Q={quality}")
+                if score != "" and pd.notna(score):
+                    parts.append(f"S={int(score)}")
+                if evidence != "" and pd.notna(evidence):
+                    parts.append(f"E={int(evidence)}")
+                if close is not None and pd.notna(close):
+                    parts.append(f"C={float(close):.2f}")
+                if stop is not None and pd.notna(stop):
+                    parts.append(f"ST={float(stop):.2f}")
+                if target is not None and pd.notna(target):
+                    parts.append(f"TG={float(target):.2f}")
+
+                data_lines.append(f"• {' · '.join(parts)}")
+                if note:
+                    data_lines.append(f"  ↳ {note}")
 
     msg = build_message(
         phase="🐍 Cobra v4.0 · Diario Operable",

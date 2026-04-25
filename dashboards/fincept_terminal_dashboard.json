@@ -1,0 +1,78 @@
+{
+  "snapshot": {
+    "latest_signal_date": "2026-04-24",
+    "open_positions": 1,
+    "closed_positions": 0,
+    "candidate_count_today": 1,
+    "portfolio_capacity_used": 1,
+    "portfolio_capacity_max": 8,
+    "portfolio_capacity_pct": 12.5,
+    "realized_pnl_pct_sum": 0.0,
+    "avg_closed_trade_pnl_pct": null,
+    "closed_trade_win_rate_pct": null,
+    "live_unrealized_pnl_pct_sum": 0.0
+  },
+  "setup_usage": [
+    {
+      "setup_code": "A_REV_US",
+      "open_positions": 0,
+      "cap": 2,
+      "remaining": 2,
+      "usage_pct": 0.0
+    },
+    {
+      "setup_code": "A_REV_GLOBAL",
+      "open_positions": 0,
+      "cap": 4,
+      "remaining": 4,
+      "usage_pct": 0.0
+    },
+    {
+      "setup_code": "D_EU_TACTICAL",
+      "open_positions": 1,
+      "cap": 2,
+      "remaining": 1,
+      "usage_pct": 50.0
+    }
+  ],
+  "open_positions": [
+    {
+      "ticker": "CTT.LS",
+      "setup_code": "D_EU_TACTICAL",
+      "opened_at": "2026-04-24",
+      "planned_exit_date": "2026-04-29",
+      "entry_price": 6.29,
+      "last_close": 6.29,
+      "last_close_date": "2026-04-24",
+      "unrealized_pnl_pct": 0.0,
+      "stop_price": 6.11,
+      "target_price": 6.54,
+      "signal_score": 68.0,
+      "quality_tier": "MEDIUM"
+    }
+  ],
+  "recent_closed_positions": [],
+  "top_candidates": [
+    {
+      "ticker": "CTT.LS",
+      "setup_code": "D_EU_TACTICAL",
+      "quality_tier": "MEDIUM",
+      "signal_score": 68.0,
+      "entry_price": 6.29,
+      "stop_price": 6.11,
+      "target_price": 6.54,
+      "market_bucket": "EU"
+    }
+  ],
+  "charts": {
+    "equity_curve": [],
+    "open_positions_timeline": [
+      {
+        "date": "2026-04-24",
+        "open_positions": 1
+      }
+    ],
+    "pnl_by_setup": [],
+    "exit_distribution": []
+  }
+}

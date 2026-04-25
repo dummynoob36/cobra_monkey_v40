@@ -13,6 +13,7 @@ from v40.config_v40 import DAILY_PRICES_DIR, DATASET_V40_PATH, WEEKLY_WINDOW_DAY
 from v40.engine.fetch_daily_prices_v40 import run_daily_prices_v40
 from v40.engine.build_dataset_v40 import build_dataset_v40
 from v40.reports_v40 import build_daily_valid_setups_report, build_weekly_report
+from v40.daily_candidates import build_daily_candidates, save_daily_candidates
 from v40.portfolio import close_positions_with_market_data, generate_entry_records, load_portfolio, save_portfolio, select_entries
 from v40.telegram_ops import build_entry_alert, build_exit_alert, build_portfolio_status_alert
 from scripts.tracking.tracking_engine_v40 import send_telegram_message
@@ -329,6 +330,13 @@ def run_v40(no_telegram: bool = False) -> None:
     df_v40["signal_date"] = pd.to_datetime(df_v40["signal_date"], errors="coerce")
     df_v40 = df_v40.dropna(subset=["signal_date"])
 
+    daily_candidates, candidate_summary = build_daily_candidates(df_v40, today)
+    save_daily_candidates(daily_candidates)
+    print(
+        f"[V4] daily_candidates: seen={candidate_summary.total_signals_seen} "
+        f"eligible={candidate_summary.eligible_after_filters} final={candidate_summary.final_candidates}"
+    )
+
     # --------------------------------------------------------
     # FASE 2 — Mensaje oficial
     # --------------------------------------------------------
@@ -356,10 +364,7 @@ def run_v40(no_telegram: bool = False) -> None:
     portfolio = load_portfolio()
     portfolio, closed_positions = close_positions_with_market_data(portfolio, as_of=pd.to_datetime(today))
 
-    today_signals = df_v40[
-        (df_v40['signal_date'].dt.date == today)
-        & (df_v40.get('signal_status', 'new') != 'disabled')
-    ].copy()
+    today_signals = daily_candidates.copy()
     selected_entries = select_entries(today_signals, portfolio)
     new_records = generate_entry_records(selected_entries)
     if not new_records.empty:

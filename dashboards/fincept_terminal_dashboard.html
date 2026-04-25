@@ -1,0 +1,99 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>FinceptTerminal — Cobra v40 Dashboard</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    :root {
+      --bg:#08111f; --bg2:#0f1b31; --card:#101c32cc; --line:#233556; --text:#e8eefc; --muted:#94a7cc;
+      --green:#34d399; --blue:#60a5fa; --amber:#f59e0b; --pink:#f472b6;
+    }
+    * { box-sizing:border-box; }
+    body { font-family: Inter, ui-sans-serif, system-ui, Arial, sans-serif; margin:0; background:radial-gradient(circle at top, #132445 0%, var(--bg) 55%); color:var(--text); }
+    .wrap { max-width: 1400px; margin:0 auto; padding:32px 20px 48px; }
+    .hero { display:flex; justify-content:space-between; align-items:end; gap:24px; margin-bottom:22px; }
+    h1 { margin:0; font-size:34px; }
+    .muted { color:var(--muted); font-size:14px; }
+    .grid { display:grid; grid-template-columns: repeat(auto-fit,minmax(200px,1fr)); gap:16px; margin:18px 0 26px; }
+    .card { background:var(--card); backdrop-filter: blur(10px); border:1px solid var(--line); border-radius:18px; padding:18px; box-shadow:0 10px 35px rgba(0,0,0,.22); }
+    .metric { font-size:30px; font-weight:700; margin-top:6px; }
+    .section { margin-top:24px; }
+    .section-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+    .charts { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    table { width:100%; border-collapse:collapse; font-size:14px; }
+    th,td { border-bottom:1px solid var(--line); padding:10px 8px; text-align:left; }
+    th { color:#b7c5e4; font-weight:600; }
+    .pill { display:inline-block; padding:4px 10px; border-radius:999px; font-size:12px; border:1px solid var(--line); color:#d9e4ff; background:#132441; }
+    .good { color:var(--green); } .bad { color:#fb7185; } .accent { color:#8b5cf6; }
+    @media (max-width: 980px) { .charts { grid-template-columns:1fr; } .hero { flex-direction:column; align-items:flex-start; } }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hero">
+    <div>
+      <div class="pill">FinceptTerminal / Cobra v40</div>
+      <h1>Portfolio Monitor</h1>
+      <div class="muted">Live paper-trading oversight with cleaner operational metrics</div>
+    </div>
+    <div class="muted">Signal date: <strong>2026-04-24</strong></div>
+  </div>
+
+  <div id="snapshot" class="grid"></div>
+
+  <div class="section">
+    <div class="section-head"><h2>Charts</h2><div class="muted">Clean dates, no timestamp noise</div></div>
+    <div class="charts">
+      <div class="card"><div id="equityCurve"></div></div>
+      <div class="card"><div id="exposureTimeline"></div></div>
+      <div class="card"><div id="setupPnl"></div></div>
+      <div class="card"><div id="exitDistribution"></div></div>
+    </div>
+  </div>
+
+  <div class="section card"><div class="section-head"><h2>Setup capacity</h2></div><table id="setupTable"></table></div>
+  <div class="section card"><div class="section-head"><h2>Open positions</h2><div class="muted">Includes latest close and unrealized PnL</div></div><table id="openTable"></table></div>
+  <div class="section card"><div class="section-head"><h2>Top candidates</h2></div><table id="candidateTable"></table></div>
+  <div class="section card"><div class="section-head"><h2>Recent closed positions</h2></div><table id="closedTable"></table></div>
+</div>
+
+<script>
+const payload = {"snapshot": {"latest_signal_date": "2026-04-24", "open_positions": 1, "closed_positions": 0, "candidate_count_today": 1, "portfolio_capacity_used": 1, "portfolio_capacity_max": 8, "portfolio_capacity_pct": 12.5, "realized_pnl_pct_sum": 0.0, "avg_closed_trade_pnl_pct": null, "closed_trade_win_rate_pct": null, "live_unrealized_pnl_pct_sum": 0.0}, "setup_usage": [{"setup_code": "A_REV_US", "open_positions": 0, "cap": 2, "remaining": 2, "usage_pct": 0.0}, {"setup_code": "A_REV_GLOBAL", "open_positions": 0, "cap": 4, "remaining": 4, "usage_pct": 0.0}, {"setup_code": "D_EU_TACTICAL", "open_positions": 1, "cap": 2, "remaining": 1, "usage_pct": 50.0}], "open_positions": [{"ticker": "CTT.LS", "setup_code": "D_EU_TACTICAL", "opened_at": "2026-04-24", "planned_exit_date": "2026-04-29", "entry_price": 6.29, "last_close": 6.29, "last_close_date": "2026-04-24", "unrealized_pnl_pct": 0.0, "stop_price": 6.11, "target_price": 6.54, "signal_score": 68.0, "quality_tier": "MEDIUM"}], "recent_closed_positions": [], "top_candidates": [{"ticker": "CTT.LS", "setup_code": "D_EU_TACTICAL", "quality_tier": "MEDIUM", "signal_score": 68.0, "entry_price": 6.29, "stop_price": 6.11, "target_price": 6.54, "market_bucket": "EU"}], "charts": {"equity_curve": [], "open_positions_timeline": [{"date": "2026-04-24", "open_positions": 1}], "pnl_by_setup": [], "exit_distribution": []}};
+function fmt(v, suffix='') { return (v === null || v === undefined || v === '') ? '-' : `${v}${suffix}`; }
+function card(title, value, extra='') { return `<div class="card"><div class="muted">${title}</div><div class="metric">${value}</div><div class="muted">${extra}</div></div>`; }
+const s = payload.snapshot;
+document.getElementById('snapshot').innerHTML = [
+  card('Open positions', `${s.open_positions} / ${s.portfolio_capacity_max}`, `capacity used ${fmt(s.portfolio_capacity_pct, '%')}`),
+  card('Candidates today', s.candidate_count_today),
+  card('Realized PnL', fmt(s.realized_pnl_pct_sum, '%')),
+  card('Live unrealized PnL', fmt(s.live_unrealized_pnl_pct_sum, '%')),
+  card('Closed positions', s.closed_positions),
+  card('Closed win rate', fmt(s.closed_trade_win_rate_pct, '%')),
+].join('');
+
+function renderTable(id, rows) {
+  const el = document.getElementById(id);
+  if (!rows || !rows.length) { el.innerHTML = '<tr><td>No data</td></tr>'; return; }
+  const cols = Object.keys(rows[0]);
+  const thead = '<tr>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr>';
+  const tbody = rows.map(r => '<tr>' + cols.map(c => `<td>${r[c] ?? ''}</td>`).join('') + '</tr>').join('');
+  el.innerHTML = thead + tbody;
+}
+renderTable('setupTable', payload.setup_usage);
+renderTable('openTable', payload.open_positions);
+renderTable('candidateTable', payload.top_candidates);
+renderTable('closedTable', payload.recent_closed_positions);
+
+const baseLayout = { paper_bgcolor:'rgba(0,0,0,0)', plot_bgcolor:'rgba(0,0,0,0)', font:{color:'#e8eefc'}, margin:{t:42,r:18,b:42,l:42} };
+const eq = payload.charts.equity_curve || [];
+Plotly.newPlot('equityCurve', [{ x:eq.map(r=>r.date), y:eq.map(r=>r.cum_pnl_pct), type:'scatter', mode:'lines+markers', line:{color:'#34d399', width:3}, marker:{size:8} }], { ...baseLayout, title:'Equity curve (realized PnL %)' }, {displayModeBar:false});
+const ex = payload.charts.open_positions_timeline || [];
+Plotly.newPlot('exposureTimeline', [{ x:ex.map(r=>r.date), y:ex.map(r=>r.open_positions), type:'bar', marker:{color:'#60a5fa', opacity:.9} }], { ...baseLayout, title:'Open positions over time' }, {displayModeBar:false});
+const sp = payload.charts.pnl_by_setup || [];
+Plotly.newPlot('setupPnl', [{ x:sp.map(r=>r.setup_code), y:sp.map(r=>r.pnl_sum_pct), type:'bar', marker:{color:'#f59e0b'} }], { ...baseLayout, title:'Realized PnL by setup (%)' }, {displayModeBar:false});
+const ed = payload.charts.exit_distribution || [];
+Plotly.newPlot('exitDistribution', [{ labels:ed.map(r=>r.exit_reason), values:ed.map(r=>r.count), type:'pie', hole:.55, textinfo:'label+percent', marker:{colors:['#34d399','#fb7185','#60a5fa','#f59e0b']} }], { ...baseLayout, title:'Exit distribution' }, {displayModeBar:false});
+</script>
+</body>
+</html>
